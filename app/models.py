@@ -56,7 +56,7 @@ class Repo(models.Model):
     code_of_conduct = models.CharField(max_length=255, null=True, blank=True)
     forking_allowed = models.BooleanField(null=True, blank=True)
     parent_name_with_owner = models.CharField(max_length=255, null=True, blank=True)
-
+ 
     languages = models.ManyToManyField(
         Language, through="LanguageRepo", related_name="repos"
     )
