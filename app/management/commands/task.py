@@ -165,7 +165,7 @@ class Command(BaseCommand):
                 for future in as_completed(futures):
                     table, sec = future.result()
                     print(f"{table}: {sec:.2f} с")
-            print(f"запись в базу (всё вместе): {time.perf_counter() - t:.2f} с")
+            print(f"запись в базу: {time.perf_counter() - t:.2f} с")
             print(f"всего: {time.perf_counter() - total:.2f} с")
         finally:
             gc.enable()
