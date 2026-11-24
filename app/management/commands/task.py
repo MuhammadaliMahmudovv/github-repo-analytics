@@ -3,7 +3,31 @@ import time
 
 import orjson
 from django.core.management.base import BaseCommand
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from django.db import connection, transaction
+
+
+def load_table(table, columns, rows, types):
+    """Загрузить одну таблицу в отдельном соединении и в отдельной транзакции."""
+    start = time.perf_counter()
+    try:
+        with transaction.atomic():
+            with connection.cursor() as django_cursor:
+                cursor = django_cursor.cursor
+                cursor.execute(f"TRUNCATE {table} RESTART IDENTITY")
+
+                options = "(FORMAT BINARY, FREEZE)" if types else "(FREEZE)"
+                with cursor.copy(
+                    f"COPY {table} ({columns}) FROM STDIN {options}"
+                ) as copy:
+                    if types:
+                        copy.set_types(types)
+                    for row in rows:
+                        copy.write_row(row)
+        return table, time.perf_counter() - start
+    finally:
+        connection.close()
+
 
 REPO_COLUMNS = (
     "id, owner_id, name, stars, forks, watchers, is_fork, is_archived, "
@@ -116,26 +140,32 @@ class Command(BaseCommand):
                 ),
             ]
 
-            with transaction.atomic():
-                with connection.cursor() as django_cursor:
-                    cursor = django_cursor.cursor
-                    names = ", ".join(table for table, _, _, _ in tables)
-                    cursor.execute(f"TRUNCATE {names} RESTART IDENTITY")
+            # with transaction.atomic():
+            #     with connection.cursor() as django_cursor:
+            #         cursor = django_cursor.cursor
+            #         names = ", ".join(table for table, _, _, _ in tables)
+            #         cursor.execute(f"TRUNCATE {names} RESTART IDENTITY")
 
-                    for table, columns, rows, types in tables:
-                        t = time.perf_counter()
-                        options = "(FORMAT BINARY, FREEZE)" if types else "(FREEZE)"
-                        with cursor.copy(
-                            f"COPY {table} ({columns}) FROM STDIN {options}"
-                        ) as copy:
-                            if types:
-                                copy.set_types(types)
-                            for row in rows:
-                                copy.write_row(row)
-                        print(f"{table}: {time.perf_counter() - t:.2f} с")
-                commit_start = time.perf_counter()
-            print(f"коммит: {time.perf_counter() - commit_start:.2f} с")
-
+            #         for table, columns, rows, types in tables:
+            #             t = time.perf_counter()
+            #             options = "(FORMAT BINARY, FREEZE)" if types else "(FREEZE)"
+            #             with cursor.copy(
+            #                 f"COPY {table} ({columns}) FROM STDIN {options}"
+            #             ) as copy:
+            #                 if types:
+            #                     copy.set_types(types)
+            #                 for row in rows:
+            #                     copy.write_row(row)
+            #             print(f"{table}: {time.perf_counter() - t:.2f} с")
+            #     commit_start = time.perf_counter()
+            # print(f"коммит: {time.perf_counter() - commit_start:.2f} с")
+            t = time.perf_counter()
+            with ThreadPoolExecutor(max_workers=len(tables)) as pool:
+                futures = [pool.submit(load_table, *table) for table in tables]
+                for future in as_completed(futures):
+                    table, sec = future.result()
+                    print(f"{table}: {sec:.2f} с")
+            print(f"запись в базу (всё вместе): {time.perf_counter() - t:.2f} с")
             print(f"всего: {time.perf_counter() - total:.2f} с")
         finally:
             gc.enable()
