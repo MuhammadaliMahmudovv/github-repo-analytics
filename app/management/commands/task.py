@@ -30,6 +30,7 @@ class Command(BaseCommand):
             t = time.perf_counter()
             with open("part1.json", "rb") as f:
                 data = orjson.loads(f.read())
+            print(f"чтение файла: {time.perf_counter() - t:.2f}")
 
             t = time.perf_counter()
             best = {}
@@ -38,6 +39,7 @@ class Command(BaseCommand):
                 if key not in best or (repo["stars"] or 0) > (best[key]["stars"] or 0):
                     best[key] = repo
             repos = list(best.values())
+            print(f"дубликаты: {time.perf_counter() - t:.2f} с")
 
             t = time.perf_counter()
             owners = {}
@@ -96,35 +98,43 @@ class Command(BaseCommand):
                     topic_stars[topic_id] = topic["stars"]
                     topic_links.append((topic_id, repo_id))
 
+            print(f"подготовка строк: {time.perf_counter() - t:.2f} с")
             owner_rows = [(i, name) for name, i in owners.items()]
             language_rows = [(i, name) for name, i in languages.items()]
             topic_rows = [(i, name, topic_stars[i]) for name, i in topics.items()]
-
             tables = [
-                ("app_repoowner", "id, name", owner_rows),
-                ("app_language", "id, name", language_rows),
-                ("app_topic", "id, name, stars", topic_rows),
-                ("app_repo", REPO_COLUMNS, repo_rows),
-                ("app_languagerepo", "language_id, repo_id, size", language_links),
-                ("app_topicrepo", "topic_id, repo_id", topic_links),
+                ("app_repoowner", "id, name", owner_rows, None),
+                ("app_language", "id, name", language_rows, None),
+                ("app_topic", "id, name, stars", topic_rows, None),
+                ("app_repo", REPO_COLUMNS, repo_rows, None),
+                ("app_topicrepo", "topic_id, repo_id", topic_links, ["int8", "int8"]),
+                (
+                    "app_languagerepo",
+                    "language_id, repo_id, size",
+                    language_links,
+                    ["int8", "int8", "int8"],
+                ),
             ]
 
             with transaction.atomic():
                 with connection.cursor() as django_cursor:
                     cursor = django_cursor.cursor
-
-                    names = ", ".join(table for table, _, _ in tables)
+                    names = ", ".join(table for table, _, _, _ in tables)
                     cursor.execute(f"TRUNCATE {names} RESTART IDENTITY")
 
-                    for table, columns, rows in tables:
+                    for table, columns, rows, types in tables:
                         t = time.perf_counter()
+                        options = "(FORMAT BINARY, FREEZE)" if types else "(FREEZE)"
                         with cursor.copy(
-                            f"COPY {table} ({columns}) FROM STDIN"
+                            f"COPY {table} ({columns}) FROM STDIN {options}"
                         ) as copy:
+                            if types:
+                                copy.set_types(types)
                             for row in rows:
                                 copy.write_row(row)
-
+                        print(f"{table}: {time.perf_counter() - t:.2f} с")
                 commit_start = time.perf_counter()
+            print(f"коммит: {time.perf_counter() - commit_start:.2f} с")
 
             print(f"всего: {time.perf_counter() - total:.2f} с")
         finally:
