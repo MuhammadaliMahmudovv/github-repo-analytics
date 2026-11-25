@@ -19,7 +19,7 @@ class StatisticsView(APIView):
                 {
                     "year": date.year,
                     "languages": [
-                        {"language": lang.name, "repos": lang.repo_count}
+                        {"language": lang.name, "count": lang.repo_count}
                         for lang in top
                     ],
                 }
