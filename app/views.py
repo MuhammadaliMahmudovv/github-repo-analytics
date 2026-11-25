@@ -13,7 +13,7 @@ class StatisticsView(APIView):
             top = (
                 Language.objects.filter(repos__created_at__year=date.year)
                 .annotate(repo_count=Count("repos"))
-                .order_by("-repo_count", "name")[:5]
+                .order_by("-repo_count")[:5]
             )
             result.append(
                 {
