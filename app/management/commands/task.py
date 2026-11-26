@@ -8,7 +8,6 @@ from django.db import connection, transaction
 
 
 def load_table(table, columns, rows, types):
-    """Загрузить одну таблицу в отдельном соединении и в отдельной транзакции."""
     start = time.perf_counter()
     try:
         with transaction.atomic():
